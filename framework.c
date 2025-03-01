@@ -1,120 +1,65 @@
-#include "hardware/gpio.h"
-#include "hardware/spi.h"
-#include "pico/stdio.h"
-#include "pico/stdlib.h"
-#include "pico/time.h"
+#include "framework.h"
 
-/// ==== LED pins =============================================================
-#define TRG_LED_L 28
-#define TRG_LED_R 4
-
-/// ==== Button pins ==========================================================
-#define TRG_BTN_W 5
-#define TRG_BTN_A 6
-#define TRG_BTN_S 7
-#define TRG_BTN_D 8
-
-#define TRG_BTN_I 12
-#define TRG_BTN_J 13
-#define TRG_BTN_K 14
-#define TRG_BTN_L 15
-
-/// ==== Screen pins ==========================================================
-#define TRG_SCR_CS	  20
-#define TRG_SCR_RESET 26
-#define TRG_SCR_DC	  22
-#define TRG_SCR_MOSI  19
-#define TRG_SCR_SCK	  18
-#define TRG_SCR_LITE  17
-
-#define TRG_SCR_WIDTH  160
-#define TRG_SCR_HEIGHT 128
-
-/// ==== SPI instance =========================================================
-#define SPI_PORT spi0
-
-/// ==== Common TFT LCD commands ==============================================
-#define CMD_SLEEP_OUT	   0x11
-#define CMD_DISPLAY_ON	   0x29
-#define CMD_COLUMN_ADDRESS 0x2A
-#define CMD_PAGE_ADDRESS   0x2B
-#define CMD_MEMORY_WRITE   0x2C
-#define CMD_MACTL		   0x36	 // Memory Access Control
-#define CMD_PIXELFORMAT	   0x3A
-
-/// ==== Color definitions (RGB565 format) ====================================
-#define COLOR_BLACK	  0x0000
-#define COLOR_BLUE	  0x001F
-#define COLOR_RED	  0xF800
-#define COLOR_GREEN	  0x07E0
-#define COLOR_CYAN	  0x07FF
-#define COLOR_MAGENTA 0xF81F
-#define COLOR_YELLOW  0xFFE0
-#define COLOR_WHITE	  0xFFFF
-#define COLOR_PURPLE  0x780F
-
-/// ==== Return codes =========================================================
-#define TRG_OK 0
-
-/// ==== Function prototypes ==================================================
-
-int trg_led_init(void);
-int trg_buttons_init(void);
-
-void tft_init(void);
-void tft_write_command(uint8_t cmd);
-void tft_write_data(uint8_t data);
-void tft_write_data16(uint16_t data);
-void tft_set_address_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-void tft_draw_pixel(uint16_t x, uint16_t y, uint16_t color);
-void tft_fill_screen(uint16_t color);
-
-// void test_buttons(uint16_t *x, uint16_t *y);
-void blink_twice(void);
+void move_player(uint8_t keycode);
 
 int main(void) {
 	stdio_init_all();
 
-	// Initialize the LEDs
 	int rc = trg_led_init();
 	hard_assert(rc == TRG_OK);
-
-	// Initialize the buttons
 	rc = trg_buttons_init();
 	hard_assert(rc == TRG_OK);
-
 	// Blink the LEDs twice to indicate that the program has started
 	blink_twice();
-
-	// Initialize the TFT display
 	tft_init();
-
-	// Fill the screen with purple color
 	tft_fill_screen(COLOR_GREEN);
 
-	uint16_t x = TRG_SCR_WIDTH / 2;
-	uint16_t y = TRG_SCR_HEIGHT / 2;
+	init_keypress_event_loop(true);
+	reg_keypress_callback(move_player);
 
 	while (true) {
-		if (!gpio_get(TRG_BTN_W)) {
-			if (y < TRG_SCR_HEIGHT)
-				y++;
+		uint8_t button_state = trg_get_button();
+		for (int i = 7; i >= 0; i--) {
+			stdio_printf("%d", (button_state >> i) & 1);
 		}
-		if (!gpio_get(TRG_BTN_A)) {
-			if (x > 0)
-				x--;
-		}
-		if (!gpio_get(TRG_BTN_S)) {
-			if (y > 0)
-				y--;
-		}
-		if (!gpio_get(TRG_BTN_D)) {
-			if (x < TRG_SCR_WIDTH)
-				x++;
-		}
-		tft_draw_pixel(x, y, COLOR_RED);
+		stdio_printf("\n");
 		sleep_ms(50);
 	}
+
+	stop_keypress_event_loop();
+}
+
+uint16_t g_x = TRG_SCR_WIDTH / 2;
+uint16_t g_y = TRG_SCR_HEIGHT / 2;
+
+void move_player(uint8_t keycode) {
+	static uint8_t delay = 100;
+	if (keycode & KEY_W) {
+		if (g_y < TRG_SCR_HEIGHT - 1)
+			g_y++;
+	}
+	if (keycode & KEY_A) {
+		if (g_x > 0)
+			g_x--;
+	}
+	if (keycode & KEY_S) {
+		if (g_y > 0)
+			g_y--;
+	}
+	if (keycode & KEY_D) {
+		if (g_x < TRG_SCR_WIDTH - 1)
+			g_x++;
+	}
+	if (keycode & KEY_I) {
+		if (delay > 20)
+			delay -= 10;
+	}
+	if (keycode & KEY_K) {
+		if (delay < 200)
+			delay += 10;
+	}
+	tft_draw_pixel(g_x, g_y, COLOR_RED);
+	sleep_ms(delay);
 }
 
 /// ==== Function definitions =================================================

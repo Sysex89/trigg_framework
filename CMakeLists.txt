@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(framework framework.c )
+add_executable(framework framework.c src/events.c)
 
 pico_set_program_name(framework "framework")
 pico_set_program_version(framework "0.1")
@@ -47,6 +47,7 @@ pico_enable_stdio_usb(framework 1)
 # Add the standard library to the build
 target_link_libraries(framework
         pico_stdlib
+        pico_multicore
         hardware_spi)
 
 # Add the standard include files to the build
