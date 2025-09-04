@@ -1,12 +1,14 @@
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
+#include "pico/audio_i2s.h"
 #include "pico/multicore.h"
 #include "pico/stdio.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
+#include <math.h>
 
 /// ==== LED pins =============================================================
-#define TRG_LED_L 28
+#define TRG_LED_L 25
 #define TRG_LED_R 4
 
 /// ==== Button pins ==========================================================
@@ -33,6 +35,16 @@
 
 /// ==== SPI instance =========================================================
 #define SPI_PORT spi0
+
+/// ==== Audio pins ===========================================================
+#define TRG_AUD_BCLK  26
+#define TRG_AUD_LRCLK 27
+#define TRG_AUD_DIN   28
+
+/// ==== Audio configuration ==================================================
+#define TRG_AUD_SAMPLE_RATE 24000
+#define TRG_AUD_BUFFER_SIZE 256
+#define TRG_AUD_BUFFER_COUNT 3
 
 /// ==== Common TFT LCD commands ==============================================
 #define CMD_SLEEP_OUT	   0x11
@@ -76,10 +88,19 @@ static bool g_keypress_callback_trigger_always = false;
 /// ==== Return codes =========================================================
 #define TRG_OK 0
 
+/// ==== Audio types ==========================================================
+typedef struct {
+    audio_buffer_pool_t *pool;
+    bool initialized;
+    audio_format_t format;
+} trg_audio_t;
+
 /// ==== Function prototypes ==================================================
 
 int trg_led_init(void);
 int trg_buttons_init(void);
+int trg_audio_init(void);
+void trg_audio_cleanup(void);
 
 void tft_init(void);
 void tft_write_command(uint8_t cmd);
@@ -98,3 +119,9 @@ void init_keypress_event_loop(bool callback_trigger_always);
 void stop_keypress_event_loop(void);
 void reg_keypress_callback(keypress_callback_t callback);
 void keypress_event_loop(void);
+
+/// ==== Audio functions ======================================================
+audio_buffer_t *trg_audio_get_buffer(void);
+void trg_audio_play_buffer(audio_buffer_t *buffer);
+void trg_audio_play_tone(float frequency, uint32_t duration_ms);
+void trg_audio_play_pcm(int16_t *samples, size_t sample_count);

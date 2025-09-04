@@ -9,6 +9,8 @@ int main(void) {
 	hard_assert(rc == TRG_OK);
 	rc = trg_buttons_init();
 	hard_assert(rc == TRG_OK);
+	rc = trg_audio_init();
+	hard_assert(rc == TRG_OK);
 	// Blink the LEDs twice to indicate that the program has started
 	blink_twice();
 	tft_init();
@@ -31,6 +33,9 @@ int main(void) {
 
 uint16_t g_x = TRG_SCR_WIDTH / 2;
 uint16_t g_y = TRG_SCR_HEIGHT / 2;
+
+/// ==== Audio globals ========================================================
+static trg_audio_t g_audio = {0};
 
 void move_player(uint8_t keycode) {
 	static uint8_t delay = 100;
@@ -57,6 +62,12 @@ void move_player(uint8_t keycode) {
 	if (keycode & KEY_K) {
 		if (delay < 200)
 			delay += 10;
+	}
+	if (keycode & KEY_J) {
+		trg_audio_play_tone(440.0f, 100);
+	}
+	if (keycode & KEY_L) {
+		trg_audio_play_tone(880.0f, 100);
 	}
 	tft_draw_pixel(g_x, g_y, COLOR_RED);
 	sleep_ms(delay);
@@ -281,4 +292,129 @@ void tft_fill_screen(uint16_t color) {
 	}
 
 	gpio_put(TRG_SCR_CS, 1);  // Deselect display
+}
+
+/// ==== Audio function implementations ======================================
+
+int trg_audio_init(void) {
+	if (g_audio.initialized) {
+		return TRG_OK;
+	}
+
+	// Initialize audio format
+	g_audio.format = (audio_format_t) {
+		.format = AUDIO_BUFFER_FORMAT_PCM_S16,
+		.sample_freq = TRG_AUD_SAMPLE_RATE,
+		.channel_count = 1,
+	};
+
+	// Create audio buffer pool
+	static audio_buffer_pool_t *pool = NULL;
+	audio_buffer_format_t audio_buffer_format = {
+		.format = &g_audio.format,
+		.sample_stride = 2
+	};
+
+	pool = audio_new_buffer_pool(&audio_buffer_format, 
+								 TRG_AUD_BUFFER_COUNT, 
+								 TRG_AUD_BUFFER_SIZE);
+	if (!pool) {
+		return -1;
+	}
+
+	// Configure I2S
+	audio_i2s_config_t audio_i2s_config = {
+		.data_pin = TRG_AUD_DIN,
+		.clock_pin_base = TRG_AUD_BCLK,
+		.dma_channel = 0,
+		.pio_sm = 0,
+	};
+
+	if (!audio_i2s_setup(&g_audio.format, &audio_i2s_config)) {
+		return -1;
+	}
+
+	if (!audio_i2s_connect(pool)) {
+		return -1;
+	}
+
+	g_audio.pool = pool;
+	g_audio.initialized = true;
+	audio_i2s_set_enabled(true);
+
+	stdio_printf("Audio system initialized successfully!\n");
+	return TRG_OK;
+}
+
+void trg_audio_cleanup(void) {
+	if (!g_audio.initialized) {
+		return;
+	}
+
+	audio_i2s_set_enabled(false);
+	g_audio.initialized = false;
+	stdio_printf("Audio system cleaned up\n");
+}
+
+audio_buffer_t *trg_audio_get_buffer(void) {
+	if (!g_audio.initialized) {
+		return NULL;
+	}
+	return take_audio_buffer(g_audio.pool, false);
+}
+
+void trg_audio_play_buffer(audio_buffer_t *buffer) {
+	if (!g_audio.initialized || !buffer) {
+		return;
+	}
+	give_audio_buffer(g_audio.pool, buffer);
+}
+
+void trg_audio_play_tone(float frequency, uint32_t duration_ms) {
+	if (!g_audio.initialized) {
+		return;
+	}
+
+	audio_buffer_t *buffer = trg_audio_get_buffer();
+	if (!buffer) {
+		return;
+	}
+
+	int16_t *samples = (int16_t *)buffer->buffer->bytes;
+	uint32_t sample_count = buffer->max_sample_count;
+	
+	// Generate sine wave
+	for (uint32_t i = 0; i < sample_count; i++) {
+		float t = (float)i / TRG_AUD_SAMPLE_RATE;
+		if (t * 1000.0f > duration_ms) {
+			samples[i] = 0;
+		} else {
+			samples[i] = (int16_t)(sinf(2.0f * M_PI * frequency * t) * 16384.0f);
+		}
+	}
+	
+	buffer->sample_count = sample_count;
+	trg_audio_play_buffer(buffer);
+}
+
+void trg_audio_play_pcm(int16_t *samples, size_t sample_count) {
+	if (!g_audio.initialized || !samples) {
+		return;
+	}
+
+	audio_buffer_t *buffer = trg_audio_get_buffer();
+	if (!buffer) {
+		return;
+	}
+
+	int16_t *buffer_samples = (int16_t *)buffer->buffer->bytes;
+	size_t copy_count = sample_count < buffer->max_sample_count ? 
+						sample_count : buffer->max_sample_count;
+	
+	for (size_t i = 0; i < copy_count; i++) {
+		buffer_samples[i] = samples[i];
+	}
+	
+	buffer->sample_count = copy_count;
+	trg_audio_play_buffer(buffer);
 }

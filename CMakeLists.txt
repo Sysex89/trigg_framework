@@ -48,7 +48,8 @@ pico_enable_stdio_usb(framework 1)
 target_link_libraries(framework
         pico_stdlib
         pico_multicore
-        hardware_spi)
+        hardware_spi
+        pico_audio_i2s)
 
 # Add the standard include files to the build
 target_include_directories(framework PRIVATE
